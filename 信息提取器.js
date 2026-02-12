@@ -3,8 +3,8 @@
 // @namespace    http://tampermonkey.net/
 // @version      1.9
 // @description  专门用于提取成人影片网站的元数据信息，支持智能识别、面板隐藏显示和移动端适配
-// @author       You
-// @match        https://missav.live/cn/*
+// @author       superbaseballman
+// @match        https://missav.live/*
 // @grant        none
 // ==/UserScript==
 
@@ -85,9 +85,6 @@
         
         const panelStyles = isMobile ? getMobilePanelStyles() : getDesktopPanelStyles();
         panel.setAttribute('style', panelStyles);
-
-        // 创建面板标题栏
-        const title = createPanelHeader();
         
         // 面板控制按钮组
         const panelControls = document.createElement('div');
@@ -151,7 +148,6 @@
         resultDiv.setAttribute('style', getResultDivStyles());
 
         // 组装控制面板
-        panel.appendChild(title);
         panel.appendChild(panelControls);
         panel.appendChild(smartButtonDiv);
         panel.appendChild(buttonDiv);
@@ -166,22 +162,6 @@
         // 默认隐藏面板，只显示浮动按钮
         panel.style.display = 'none';
         floatShowBtn.style.display = 'block';
-    }
-
-    // 创建面板标题栏
-    function createPanelHeader() {
-        const title = document.createElement('h3');
-        title.textContent = '📋 影片信息提取器';
-        title.setAttribute('style', `
-            margin: 0 0 15px 0;
-            color: #333;
-            font-size: 16px;
-            font-weight: bold;
-            text-align: center;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #4CAF50;
-        `);
-        return title;
     }
 
     // 创建浮动显示按钮
@@ -300,10 +280,6 @@
         return `
             margin-top: 15px;
             max-height: ${maxHeight};
-            overflow: auto;
-            border: 1px solid #ddd;
-            padding: 12px;
-            background-color: #f9f9f9;
             font-size: 13px;
             display: block;
             border-radius: 6px;

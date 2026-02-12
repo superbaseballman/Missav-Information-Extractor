@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         成人影片信息提取器
 // @namespace    http://tampermonkey.net/
-// @version      1.5
-// @description  专门用于提取成人影片网站的元数据信息，支持智能识别和面板隐藏显示
+// @version      1.8
+// @description  专门用于提取成人影片网站的元数据信息，支持智能识别、面板隐藏显示和移动端适配
 // @author       You
 // @match        https://missav.live/cn/*
 // @grant        none
@@ -18,7 +18,6 @@
             // 关键词映射：span中文本 -> 对应的字段名
             keywordMapping: {
                 '番号': '番号',
-                '标题': '标题', 
                 '女优': '女优',
                 '出演者': '女优',
                 '发行商': '发行商',
@@ -39,7 +38,7 @@
         traditional: {
             releaseDate: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(1) > time',
             code: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(2) > span.font-medium',
-            title: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(3) > span.font-medium',
+            title: 'h1',
             actresses: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(4) > a',
             actors: '.actor, .actors, .male-actor, .male-performer, [id*="actor"], [class*="actor"], .male-actor a',
             genres: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(5) > a',
@@ -48,6 +47,7 @@
             director: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(7) > a',
             tags: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(8) > a',
             image: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div:nth-child(1) > div.relative.-mx-4.sm\\:m-0.-mt-6 > div > div > div.plyr__video-wrapper > div.plyr__poster',
+            videoPoster: 'video[playsinline]', // 视频海报选择器
             links: 'a[href]'
         }
     };
@@ -55,38 +55,31 @@
     // 存储提取的数据和面板状态
     let extractedData = {};
     let panelStates = {
-        configVisible: false,  // 关键词配置面板默认隐藏
-        resultsVisible: true   // 结果面板默认显示
+        configVisible: false  // 关键词配置面板默认隐藏
     };
 
-    // 系统字段列表（不包含在导出结果中）
-    const SYSTEM_FIELDS = ['timestamp', 'originalURL', 'extractionMethod'];
+    // 系统字段列表（不包含在导出结果中，除了原始URL）
+    const SYSTEM_FIELDS = ['timestamp', 'extractionMethod'];
+
+    // 设备检测
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isTablet = /iPad|Android(?!.*Mobile)/i.test(navigator.userAgent);
 
     // 创建控制面板
     function createControlPanel() {
+        // 主面板容器
         const panel = document.createElement('div');
-        panel.setAttribute('style', `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            background-color: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            font-family: Arial, sans-serif;
-            min-width: 350px;
-            max-width: 500px;
-        `);
+        panel.id = 'infoExtractorPanel';
+        
+        const panelStyles = isMobile ? getMobilePanelStyles() : getDesktopPanelStyles();
+        panel.setAttribute('style', panelStyles);
 
-        // 标题
-        const title = document.createElement('h3');
-        title.textContent = '智能信息提取器 v1.4';
-        title.setAttribute('style', 'margin-top: 0; color: #333; display: flex; justify-content: space-between; align-items: center;');
-
+        // 创建面板标题栏
+        const title = createPanelHeader();
+        
         // 面板控制按钮组
         const panelControls = document.createElement('div');
-        panelControls.setAttribute('style', 'display: flex; gap: 8px;');
+        panelControls.setAttribute('style', 'display: flex; gap: 8px; margin-bottom: 15px;');
 
         // 隐藏面板按钮
         const hidePanelBtn = document.createElement('button');
@@ -95,18 +88,143 @@
             background-color: #f44336;
             color: white;
             border: none;
-            padding: 4px 8px;
+            padding: 6px 12px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 12px;
+            flex: 1;
         `);
         hidePanelBtn.addEventListener('click', hideEntirePanel);
 
-        // 浮动显示按钮（初始隐藏）
+        panelControls.appendChild(hidePanelBtn);
+
+        // 智能提取按钮区域
+        const smartButtonDiv = document.createElement('div');
+        smartButtonDiv.setAttribute('style', 'margin: 15px 0; display: flex; flex-wrap: wrap; gap: 8px;');
+
+        const smartExtractBtn = document.createElement('button');
+        smartExtractBtn.textContent = '智能提取';
+        smartExtractBtn.setAttribute('style', getButtonStyle('#4CAF50'));
+        smartExtractBtn.addEventListener('click', smartExtractFields);
+
+        const traditionalExtractBtn = document.createElement('button');
+        traditionalExtractBtn.textContent = '传统提取';
+        traditionalExtractBtn.setAttribute('style', getButtonStyle('#2196F3'));
+        traditionalExtractBtn.addEventListener('click', extractTraditionalFields);
+
+        smartButtonDiv.appendChild(smartExtractBtn);
+        smartButtonDiv.appendChild(traditionalExtractBtn);
+
+        // 按钮区域（导出和复制）
+        const buttonDiv = document.createElement('div');
+        buttonDiv.setAttribute('style', 'margin: 15px 0; display: flex; flex-wrap: wrap; gap: 8px;');
+
+        const exportBtn = document.createElement('button');
+        exportBtn.textContent = '导出JSON';
+        exportBtn.setAttribute('style', getButtonStyle('#FF9800'));
+        exportBtn.addEventListener('click', exportAsJson);
+
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = '复制结果';
+        copyBtn.setAttribute('style', getButtonStyle('#9C27B0'));
+        copyBtn.addEventListener('click', copyResults);
+
+        buttonDiv.appendChild(exportBtn);
+        buttonDiv.appendChild(copyBtn);
+
+
+        // 结果显示区域
+        const resultDiv = document.createElement('div');
+        resultDiv.id = 'extractionResults';
+        resultDiv.setAttribute('style', getResultDivStyles());
+
+        // 组装控制面板
+        panel.appendChild(title);
+        panel.appendChild(panelControls);
+        panel.appendChild(smartButtonDiv);
+        panel.appendChild(buttonDiv);
+        panel.appendChild(resultDiv);
+
+        // 创建浮动显示按钮
+        const floatShowBtn = createFloatShowButton();
+
+        document.body.appendChild(panel);
+        document.body.appendChild(floatShowBtn);
+
+        // 默认隐藏面板，只显示浮动按钮
+        panel.style.display = 'none';
+        floatShowBtn.style.display = 'block';
+    }
+
+    // 创建面板标题栏
+    function createPanelHeader() {
+        const title = document.createElement('h3');
+        title.textContent = '📋 影片信息提取器';
+        title.setAttribute('style', `
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #4CAF50;
+        `);
+        return title;
+    }
+
+    // 创建浮动显示按钮
+    function createFloatShowButton() {
         const floatShowBtn = document.createElement('button');
         floatShowBtn.id = 'floatShowBtn';
         floatShowBtn.textContent = '📋 显示面板';
-        floatShowBtn.setAttribute('style', `
+        
+        const floatBtnStyles = isMobile ? getMobileFloatButtonStyles() : getDesktopFloatButtonStyles();
+        floatShowBtn.setAttribute('style', floatBtnStyles);
+        floatShowBtn.addEventListener('click', showEntirePanel);
+        
+        return floatShowBtn;
+    }
+
+    // 获取桌面端面板样式
+    function getDesktopPanelStyles() {
+        return `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            font-family: Arial, sans-serif;
+            min-width: 350px;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        `;
+    }
+
+    // 获取移动端面板样式
+    function getMobilePanelStyles() {
+        return `
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            z-index: 9999;
+            background-color: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+            font-family: Arial, sans-serif;
+            max-height: 85vh;
+            overflow-y: auto;
+        `;
+    }
+
+    // 获取桌面端浮动按钮样式
+    function getDesktopFloatButtonStyles() {
+        return `
             position: fixed;
             top: 20px;
             right: 20px;
@@ -114,155 +232,76 @@
             background-color: #4CAF50;
             color: white;
             border: none;
-            padding: 10px 15px;
+            padding: 12px 20px;
             border-radius: 25px;
             cursor: pointer;
             font-size: 14px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             display: none;
-        `);
-        floatShowBtn.addEventListener('click', showEntirePanel);
+            transition: all 0.3s ease;
+        `;
+    }
 
-        panelControls.appendChild(hidePanelBtn);
-        title.appendChild(panelControls);
-
-        // 智能提取按钮区域
-        const smartButtonDiv = document.createElement('div');
-        smartButtonDiv.setAttribute('style', 'margin: 10px 0; display: flex; flex-wrap: wrap; gap: 5px;');
-
-        const smartExtractBtn = document.createElement('button');
-        smartExtractBtn.textContent = '智能提取';
-        smartExtractBtn.setAttribute('style', `
-            flex: 1;
+    // 获取移动端浮动按钮样式
+    function getMobileFloatButtonStyles() {
+        return `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9998;
             background-color: #4CAF50;
             color: white;
             border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
+            padding: 15px 20px;
+            border-radius: 30px;
             cursor: pointer;
-            min-width: 100px;
-        `);
-        smartExtractBtn.addEventListener('click', smartExtractFields);
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            display: none;
+            transition: all 0.3s ease;
+        `;
+    }
 
-        const traditionalExtractBtn = document.createElement('button');
-        traditionalExtractBtn.textContent = '传统提取';
-        traditionalExtractBtn.setAttribute('style', `
+    // 获取按钮样式
+    function getButtonStyle(bgColor, width = 'auto') {
+        return `
             flex: 1;
-            background-color: #2196F3;
+            background-color: ${bgColor};
             color: white;
             border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
+            padding: 10px 16px;
+            border-radius: 6px;
             cursor: pointer;
-            min-width: 100px;
-        `);
-        traditionalExtractBtn.addEventListener('click', extractTraditionalFields);
+            min-width: 120px;
+            width: ${width};
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        `;
+    }
 
-        smartButtonDiv.appendChild(smartExtractBtn);
-        smartButtonDiv.appendChild(traditionalExtractBtn);
-
-        // 配置控制区域
-        const configControlDiv = document.createElement('div');
-        configControlDiv.setAttribute('style', 'margin: 10px 0;');
-
-        // 按钮区域（导出和复制）
-        const buttonDiv = document.createElement('div');
-        buttonDiv.setAttribute('style', 'margin: 10px 0; display: flex; flex-wrap: wrap; gap: 5px;');
-
-        const exportBtn = document.createElement('button');
-        exportBtn.textContent = '导出JSON';
-        exportBtn.setAttribute('style', `
-            flex: 1;
-            background-color: #FF9800;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            min-width: 100px;
-        `);
-        exportBtn.addEventListener('click', exportAsJson);
-
-        const copyBtn = document.createElement('button');
-        copyBtn.textContent = '复制结果';
-        copyBtn.setAttribute('style', `
-            flex: 1;
-            background-color: #9C27B0;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            min-width: 100px;
-        `);
-        copyBtn.addEventListener('click', copyResults);
-
-        buttonDiv.appendChild(exportBtn);
-        buttonDiv.appendChild(copyBtn);
-
-        // 结果控制区域
-        const resultControlDiv = document.createElement('div');
-        resultControlDiv.setAttribute('style', 'margin: 10px 0;');
-
-        const resultToggleBtn = document.createElement('button');
-        resultToggleBtn.textContent = panelStates.resultsVisible ? '▼ 隐藏提取结果' : '▶ 显示提取结果';
-        resultToggleBtn.setAttribute('style', `
-            background-color: #3F51B5;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            width: 100%;
-            text-align: left;
-            font-size: 13px;
-        `);
-        resultToggleBtn.addEventListener('click', toggleResultsPanel);
-
-        resultControlDiv.appendChild(resultToggleBtn);
-
-        // 结果显示区域
-        const resultDiv = document.createElement('div');
-        resultDiv.id = 'extractionResults';
-        resultDiv.setAttribute('style', `
+    // 获取结果区域样式
+    function getResultDivStyles() {
+        const maxHeight = isMobile ? '250px' : '300px';
+        return `
             margin-top: 15px;
-            max-height: 300px;
+            max-height: ${maxHeight};
             overflow: auto;
             border: 1px solid #ddd;
-            padding: 10px;
+            padding: 12px;
             background-color: #f9f9f9;
-            font-size: 12px;
-            display: ${panelStates.resultsVisible ? 'block' : 'none'};
-        `);
-
-        // 组装控制面板
-        panel.appendChild(title);
-        panel.appendChild(smartButtonDiv);
-        panel.appendChild(configControlDiv);
-        panel.appendChild(buttonDiv);
-        panel.appendChild(resultControlDiv);
-        panel.appendChild(resultDiv);
-
-        document.body.appendChild(panel);
-        document.body.appendChild(floatShowBtn);
+            font-size: 13px;
+            display: block;
+            border-radius: 6px;
+        `;
     }
 
-    // 切换结果面板显示状态
-    function toggleResultsPanel() {
-        panelStates.resultsVisible = !panelStates.resultsVisible;
-        const resultsPanel = document.getElementById('extractionResults');
-        const toggleBtn = event.target;
-        
-        if (resultsPanel) {
-            resultsPanel.style.display = panelStates.resultsVisible ? 'block' : 'none';
-        }
-        
-        toggleBtn.textContent = panelStates.resultsVisible ? '▼ 隐藏提取结果' : '▶ 显示提取结果';
-    }
 
     // 隐藏整个面板
     function hideEntirePanel() {
-        const panel = document.querySelector('div[style*="position: fixed"][style*="z-index: 9999"]');
+        const panel = document.getElementById('infoExtractorPanel');
         const floatBtn = document.getElementById('floatShowBtn');
         
         if (panel) {
@@ -270,12 +309,17 @@
         }
         if (floatBtn) {
             floatBtn.style.display = 'block';
+            
+            // 移动端添加震动反馈
+            if (isMobile && navigator.vibrate) {
+                navigator.vibrate(50);
+            }
         }
     }
 
     // 显示整个面板
     function showEntirePanel() {
-        const panel = document.querySelector('div[style*="position: fixed"][style*="z-index: 9999"]');
+        const panel = document.getElementById('infoExtractorPanel');
         const floatBtn = document.getElementById('floatShowBtn');
         
         if (panel) {
@@ -291,7 +335,7 @@
         try {
             extractedData = {
                 timestamp: new Date().toISOString(),
-                originalURL: window.location.href,
+                原始URL: window.location.href,
                 extractionMethod: 'smart'
             };
 
@@ -316,17 +360,18 @@
                         for (const [keyword, fieldName] of Object.entries(CONFIG.smartExtract.keywordMapping)) {
                             if (spanText.includes(keyword)) {
                                 // 找到匹配的关键词，提取同级别内容
-                                const content = extractSiblingContent(span);
-                                if (content) {
-                                    // 如果字段已存在，转换为数组
+                                const contentList = extractSiblingContentAsList(span);
+                                if (contentList && contentList.length > 0) {
+                                    // 如果字段已存在，合并数组
                                     if (extractedData[fieldName]) {
                                         if (Array.isArray(extractedData[fieldName])) {
-                                            extractedData[fieldName].push(content);
+                                            extractedData[fieldName] = [...extractedData[fieldName], ...contentList];
                                         } else {
-                                            extractedData[fieldName] = [extractedData[fieldName], content];
+                                            extractedData[fieldName] = [extractedData[fieldName], ...contentList];
                                         }
                                     } else {
-                                        extractedData[fieldName] = content;
+                                        // 单个元素存储为字符串，多个元素存储为数组
+                                        extractedData[fieldName] = contentList.length === 1 ? contentList[0] : contentList;
                                     }
                                 }
                                 break; // 找到匹配就跳出循环
@@ -336,11 +381,35 @@
                 });
             });
 
+            // 特殊处理：提取视频海报图片URL
+            const videoPosterUrl = extractVideoPosterUrl();
+            if (videoPosterUrl) {
+                extractedData['图片URL'] = videoPosterUrl;
+            }
+
             displaySmartResults(extractedData);
             
         } catch (e) {
             console.error('智能提取时出错:', e);
             alert('智能提取时出错，请检查控制台');
+        }
+    }
+
+    // 辅助函数：提取视频海报URL
+    function extractVideoPosterUrl() {
+        try {
+            const videoElements = document.querySelectorAll(CONFIG.traditional.videoPoster);
+            for (let video of videoElements) {
+                const dataPost = video.getAttribute('data-poster');
+                if (dataPost) {
+                    // 转换为绝对URL
+                    return new URL(dataPost, window.location).href;
+                }
+            }
+            return null;
+        } catch (e) {
+            console.error('提取视频海报URL时出错:', e);
+            return null;
         }
     }
 
@@ -362,60 +431,74 @@
         return false;
     }
 
-    // 辅助函数：提取同级别内容
-    function extractSiblingContent(targetSpan) {
+    // 辅助函数：提取同级别内容并返回数组列表
+    function extractSiblingContentAsList(targetSpan) {
         try {
             const parent = targetSpan.parentElement;
-            if (!parent) return null;
+            if (!parent) return [];
 
-            let content = '';
+            let contentList = [];
             
-            // 方法1：查找同级的其他元素
+            // 方法1：查找同级的所有非script元素
             const siblings = Array.from(parent.children);
             siblings.forEach(sibling => {
                 if (sibling !== targetSpan && sibling.tagName !== 'SCRIPT') {
                     const text = sibling.textContent.trim();
                     if (text && !shouldExcludeElement(sibling)) {
-                        content += text + ' ';
+                        // 如果是链接元素，可能包含多个标签
+                        if (sibling.tagName === 'A' || sibling.querySelectorAll('a').length > 0) {
+                            // 提取所有链接文本
+                            const links = sibling.tagName === 'A' ? [sibling] : sibling.querySelectorAll('a');
+                            links.forEach(link => {
+                                const linkText = link.textContent.trim();
+                                if (linkText) {
+                                    contentList.push(linkText);
+                                }
+                            });
+                        } else {
+                            // 普通文本元素
+                            contentList.push(text);
+                        }
                     }
                 }
             });
 
             // 方法2：如果同级没找到，查找父级的其他子元素
-            if (!content.trim()) {
+            if (contentList.length === 0) {
                 const parentSiblings = Array.from(parent.parentElement.children);
                 parentSiblings.forEach(sibling => {
                     if (sibling !== parent) {
                         const text = sibling.textContent.trim();
                         if (text && !shouldExcludeElement(sibling)) {
-                            content += text + ' ';
+                            contentList.push(text);
                         }
                     }
                 });
             }
 
             // 方法3：查找相邻的文本节点
-            if (!content.trim()) {
+            if (contentList.length === 0) {
                 const parentChildNodes = parent.childNodes;
                 parentChildNodes.forEach(node => {
                     if (node.nodeType === Node.TEXT_NODE) {
                         const text = node.textContent.trim();
                         if (text) {
-                            content += text + ' ';
+                            contentList.push(text);
                         }
                     }
                 });
             }
 
-            return content.trim() || null;
+            // 去重并返回结果
+            return [...new Set(contentList.filter(item => item.length > 0))];
             
         } catch (e) {
             console.error('提取同级别内容时出错:', e);
-            return null;
+            return [];
         }
     }
 
-    // 显示智能提取结果
+    // 显示智能提取结果（恢复原来的显示格式）
     function displaySmartResults(data) {
         const resultDiv = document.getElementById('extractionResults');
         if (!resultDiv) return;
@@ -423,13 +506,6 @@
         // 确保结果面板是可见的
         resultDiv.style.display = 'block';
         panelStates.resultsVisible = true;
-        // 更新结果面板切换按钮文本
-        const resultToggleBtn = Array.from(document.querySelectorAll('button')).find(btn => 
-            btn.textContent.includes('提取结果')
-        );
-        if (resultToggleBtn) {
-            resultToggleBtn.textContent = '▼ 隐藏提取结果';
-        }
 
         // 清空之前的结果
         resultDiv.innerHTML = '';
@@ -450,10 +526,10 @@
             
             fieldCount++;
             const fieldDiv = document.createElement('div');
-            fieldDiv.setAttribute('style', 'margin: 8px 0; padding: 8px; background-color: #fff; border-left: 3px solid #4CAF50;');
+            fieldDiv.setAttribute('style', 'margin: 10px 0; padding: 10px; background-color: #fff; border-left: 3px solid #4CAF50; border-radius: 4px;');
             
             const keySpan = document.createElement('span');
-            keySpan.setAttribute('style', 'font-weight: bold; color: #4CAF50; margin-right: 10px;');
+            keySpan.setAttribute('style', 'font-weight: bold; color: #4CAF50; margin-right: 12px;');
             keySpan.textContent = `${key}:`;
             
             const valueSpan = document.createElement('span');
@@ -476,7 +552,7 @@
             resultDiv.appendChild(noData);
         } else {
             const statsDiv = document.createElement('div');
-            statsDiv.setAttribute('style', 'margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;');
+            statsDiv.setAttribute('style', 'margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;');
             statsDiv.innerHTML = `<strong>总计:</strong> 成功提取 ${fieldCount} 个字段`;
             resultDiv.appendChild(statsDiv);
         }
@@ -495,12 +571,12 @@
             发行商: extractText(CONFIG.traditional.studio),
             导演: extractText(CONFIG.traditional.director),
             标籤: extractMultipleText(CONFIG.traditional.tags),
-            图片URL: extractImages(CONFIG.traditional.image)
+            图片URL: extractImages(CONFIG.traditional.image),
+            原始URL: window.location.href
         };
         
         // 添加系统字段到单独的数组中，不显示在结果里
         extractedData.timestamp = new Date().toISOString();
-        extractedData.originalURL = window.location.href;
         extractedData.extractionMethod = 'traditional';
 
         displayResults(extractedData);
@@ -559,7 +635,7 @@
         }
     }
 
-    // 显示传统结果
+    // 显示传统结果（恢复原来的显示格式）
     function displayResults(data) {
         const resultDiv = document.getElementById('extractionResults');
         if (!resultDiv) return;
@@ -567,13 +643,6 @@
         // 确保结果面板是可见的
         resultDiv.style.display = 'block';
         panelStates.resultsVisible = true;
-        // 更新结果面板切换按钮文本
-        const resultToggleBtn = Array.from(document.querySelectorAll('button')).find(btn => 
-            btn.textContent.includes('提取结果')
-        );
-        if (resultToggleBtn) {
-            resultToggleBtn.textContent = '▼ 隐藏提取结果';
-        }
 
         // 清空之前的结果
         resultDiv.innerHTML = '';
@@ -594,10 +663,10 @@
             
             fieldCount++;
             const fieldDiv = document.createElement('div');
-            fieldDiv.setAttribute('style', 'margin: 8px 0; padding: 8px; background-color: #fff; border-left: 3px solid #4CAF50;');
+            fieldDiv.setAttribute('style', 'margin: 10px 0; padding: 10px; background-color: #fff; border-left: 3px solid #4CAF50; border-radius: 4px;');
             
             const keySpan = document.createElement('span');
-            keySpan.setAttribute('style', 'font-weight: bold; color: #4CAF50; margin-right: 10px;');
+            keySpan.setAttribute('style', 'font-weight: bold; color: #4CAF50; margin-right: 12px;');
             keySpan.textContent = `${key}:`;
             
             const valueSpan = document.createElement('span');
@@ -620,20 +689,20 @@
             resultDiv.appendChild(noData);
         } else {
             const statsDiv = document.createElement('div');
-            statsDiv.setAttribute('style', 'margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;');
+            statsDiv.setAttribute('style', 'margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;');
             statsDiv.innerHTML = `<strong>总计:</strong> 成功提取 ${fieldCount} 个字段`;
             resultDiv.appendChild(statsDiv);
         }
     }
 
-    // 导出为JSON（过滤系统字段）
+    // 导出为JSON（过滤系统字段，但保留originalURL）
     function exportAsJson() {
         if (!extractedData || Object.keys(extractedData).length === 0) {
             alert('请先提取字段');
             return;
         }
 
-        // 创建不包含系统字段的数据副本
+        // 创建不包含系统字段的数据副本（保留originalURL）
         const cleanData = {};
         Object.entries(extractedData).forEach(([key, value]) => {
             if (!SYSTEM_FIELDS.includes(key)) {
@@ -654,14 +723,14 @@
         URL.revokeObjectURL(url);
     }
 
-    // 复制结果到剪贴板（过滤系统字段）
+    // 复制结果到剪贴板（过滤系统字段，但保留originalURL）
     function copyResults() {
         if (!extractedData || Object.keys(extractedData).length === 0) {
             alert('请先提取字段');
             return;
         }
 
-        // 创建不包含系统字段的数据副本
+        // 创建不包含系统字段的数据副本（保留originalURL）
         const cleanData = {};
         Object.entries(extractedData).forEach(([key, value]) => {
             if (!SYSTEM_FIELDS.includes(key)) {
@@ -686,9 +755,53 @@
             });
     }
 
+    // 添加触摸事件支持（移动端优化）
+    function addTouchSupport() {
+        if (isMobile) {
+            // 为所有按钮添加触摸反馈
+            document.addEventListener('touchstart', function(e) {
+                if (e.target.tagName === 'BUTTON') {
+                    e.target.style.transform = 'scale(0.95)';
+                }
+            }, { passive: true });
+
+            document.addEventListener('touchend', function(e) {
+                if (e.target.tagName === 'BUTTON') {
+                    e.target.style.transform = 'scale(1)';
+                }
+            }, { passive: true });
+
+            // 防止长按选择文本
+            document.addEventListener('selectstart', function(e) {
+                if (e.target.closest('#infoExtractorPanel') || e.target.id === 'floatShowBtn') {
+                    e.preventDefault();
+                }
+            });
+        }
+    }
+
+    // 监听窗口大小变化，动态调整布局
+    function handleResize() {
+        const panel = document.getElementById('infoExtractorPanel');
+        const floatBtn = document.getElementById('floatShowBtn');
+        
+        if (panel && floatBtn) {
+            const currentIsMobile = window.innerWidth <= 768;
+            
+            if (currentIsMobile !== isMobile) {
+                // 重新创建面板以适应新设备类型
+                panel.remove();
+                floatBtn.remove();
+                createControlPanel();
+            }
+        }
+    }
+
     // 初始化脚本
     function init() {
         createControlPanel();
+        addTouchSupport();
+        window.addEventListener('resize', handleResize);
     }
 
     // 页面加载完成后初始化

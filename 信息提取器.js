@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         成人影片信息提取器
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.9
 // @description  专门用于提取成人影片网站的元数据信息，支持智能识别、面板隐藏显示和移动端适配
 // @author       You
 // @match        https://missav.live/cn/*
@@ -34,20 +34,29 @@
             excludeClasses: ['hidden', 'invisible']
         },
         
-        // 传统选择器（备用）
+        // css选择器（备用）
         traditional: {
-            releaseDate: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(1) > time',
-            code: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(2) > span.font-medium',
+            releaseDate: '',
+            code: '',
             title: 'h1',
-            actresses: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(4) > a',
-            actors: '.actor, .actors, .male-actor, .male-performer, [id*="actor"], [class*="actor"], .male-actor a',
-            genres: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(5) > a',
-            series: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(5) > a',
-            studio: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(6) > a',
-            director: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(7) > a',
-            tags: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div.sm\\:mx-0.mb-8.rounded-0.sm\\:rounded-lg > div:nth-child(2) > div:nth-child(1) > div > div.space-y-2 > div:nth-child(8) > a',
-            image: 'body > div:nth-child(3) > div.sm\\:container.mx-auto.px-4.content-without-search.pb-12 > div > div.flex-1.order-first > div:nth-child(1) > div.relative.-mx-4.sm\\:m-0.-mt-6 > div > div > div.plyr__video-wrapper > div.plyr__poster',
-            videoPoster: 'video[playsinline]', // 视频海报选择器
+            actresses: '',
+            actors: '',
+            genres: '',
+            series: '',
+            studio: '',
+            director: '',
+            tags: '',
+            image: '',
+            // 修改videoPoster配置结构，支持指定属性类型
+            // 使用示例：
+            // 1. 读取data-post属性：{ selector: '[data-post]', attribute: 'data-post' }
+            // 2. 读取poster属性：{ selector: 'video', attribute: 'poster' }
+            // 3. 读取src属性：{ selector: 'img.poster', attribute: 'src' }
+            // 4. 兼容旧格式（仍可使用字符串）：'video[playsinline]'
+            videoPoster: {
+                selector: 'video[playsinline]',  // CSS选择器
+                attribute: 'data-poster'    // 要读取的属性名称
+            },
             links: 'a[href]'
         }
     };
@@ -64,6 +73,9 @@
     // 设备检测
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const isTablet = /iPad|Android(?!.*Mobile)/i.test(navigator.userAgent);
+
+    // 定义需要提取的核心字段
+    const CORE_FIELDS = ['番号', '标题', '女优', '类型', '发行商', '系列', '发行日期', '导演', '男优', '标签'];
 
     // 创建控制面板
     function createControlPanel() {
@@ -108,7 +120,7 @@
         smartExtractBtn.addEventListener('click', smartExtractFields);
 
         const traditionalExtractBtn = document.createElement('button');
-        traditionalExtractBtn.textContent = '传统提取';
+        traditionalExtractBtn.textContent = 'css提取';
         traditionalExtractBtn.setAttribute('style', getButtonStyle('#2196F3'));
         traditionalExtractBtn.addEventListener('click', extractTraditionalFields);
 
@@ -330,58 +342,22 @@
         }
     }
 
-    // 新增：智能提取函数
+    // 新增：智能提取函数（带css提取后备）
     function smartExtractFields() {
         try {
             extractedData = {
                 timestamp: new Date().toISOString(),
                 原始URL: window.location.href,
-                extractionMethod: 'smart'
+                extractionMethod: 'smart_with_fallback'
             };
 
-            // 遍历所有配置的容器选择器
-            CONFIG.smartExtract.containerSelectors.forEach(containerSelector => {
-                const containers = document.querySelectorAll(containerSelector);
-                
-                containers.forEach(container => {
-                    // 检查是否应该排除此容器
-                    if (shouldExcludeElement(container)) return;
-                    
-                    // 在容器内查找所有span元素
-                    const spans = container.querySelectorAll('span');
-                    
-                    spans.forEach(span => {
-                        // 检查是否应该排除此span
-                        if (shouldExcludeElement(span)) return;
-                        
-                        const spanText = span.textContent.trim();
-                        
-                        // 检查span文本是否匹配任何关键词
-                        for (const [keyword, fieldName] of Object.entries(CONFIG.smartExtract.keywordMapping)) {
-                            if (spanText.includes(keyword)) {
-                                // 找到匹配的关键词，提取同级别内容
-                                const contentList = extractSiblingContentAsList(span);
-                                if (contentList && contentList.length > 0) {
-                                    // 如果字段已存在，合并数组
-                                    if (extractedData[fieldName]) {
-                                        if (Array.isArray(extractedData[fieldName])) {
-                                            extractedData[fieldName] = [...extractedData[fieldName], ...contentList];
-                                        } else {
-                                            extractedData[fieldName] = [extractedData[fieldName], ...contentList];
-                                        }
-                                    } else {
-                                        // 单个元素存储为字符串，多个元素存储为数组
-                                        extractedData[fieldName] = contentList.length === 1 ? contentList[0] : contentList;
-                                    }
-                                }
-                                break; // 找到匹配就跳出循环
-                            }
-                        }
-                    });
-                });
-            });
+            // 第一步：执行智能提取
+            performSmartExtraction();
 
-            // 特殊处理：提取视频海报图片URL
+            // 第二步：检查缺失字段并使用css方法补充
+            fillMissingFieldsWithTraditional();
+
+            // 第三步：特殊处理视频海报URL
             const videoPosterUrl = extractVideoPosterUrl();
             if (videoPosterUrl) {
                 extractedData['图片URL'] = videoPosterUrl;
@@ -395,17 +371,162 @@
         }
     }
 
-    // 辅助函数：提取视频海报URL
+    // 执行智能提取的核心逻辑
+    function performSmartExtraction() {
+        // 遍历所有配置的容器选择器
+        CONFIG.smartExtract.containerSelectors.forEach(containerSelector => {
+            const containers = document.querySelectorAll(containerSelector);
+            
+            containers.forEach(container => {
+                // 检查是否应该排除此容器
+                if (shouldExcludeElement(container)) return;
+                
+                // 在容器内查找所有span元素
+                const spans = container.querySelectorAll('span');
+                
+                spans.forEach(span => {
+                    // 检查是否应该排除此span
+                    if (shouldExcludeElement(span)) return;
+                    
+                    const spanText = span.textContent.trim();
+                    
+                    // 检查span文本是否匹配任何关键词
+                    for (const [keyword, fieldName] of Object.entries(CONFIG.smartExtract.keywordMapping)) {
+                        if (spanText.includes(keyword)) {
+                            // 找到匹配的关键词，提取同级别内容
+                            const contentList = extractSiblingContentAsList(span);
+                            if (contentList && contentList.length > 0) {
+                                // 如果字段已存在，合并数组
+                                if (extractedData[fieldName]) {
+                                    if (Array.isArray(extractedData[fieldName])) {
+                                        extractedData[fieldName] = [...extractedData[fieldName], ...contentList];
+                                    } else {
+                                        extractedData[fieldName] = [extractedData[fieldName], ...contentList];
+                                    }
+                                } else {
+                                    // 单个元素存储为字符串，多个元素存储为数组
+                                    extractedData[fieldName] = contentList.length === 1 ? contentList[0] : contentList;
+                                }
+                            }
+                            break; // 找到匹配就跳出循环
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    // 使用css方法填充缺失字段
+    function fillMissingFieldsWithTraditional() {
+        const missingFields = CORE_FIELDS.filter(field => !extractedData[field]);
+        
+        if (missingFields.length > 0) {
+            console.log(`发现缺失字段: ${missingFields.join(', ')}，使用css方法补充`);
+            
+            // 为每个缺失字段尝试css提取
+            missingFields.forEach(field => {
+                const traditionalValue = extractFieldTraditionally(field);
+                if (traditionalValue && 
+                    ((Array.isArray(traditionalValue) && traditionalValue.length > 0) || 
+                     (!Array.isArray(traditionalValue) && traditionalValue.toString().trim()))) {
+                    extractedData[field] = traditionalValue;
+                    console.log(`成功补充字段 "${field}"`);
+                }
+            });
+        }
+    }
+
+    // 根据字段名使用对应的css选择器提取
+    function extractFieldTraditionally(fieldName) {
+        switch (fieldName) {
+            case '番号':
+                return extractText(CONFIG.traditional.code);
+            case '标题':
+                return extractText(CONFIG.traditional.title);
+            case '女优':
+                return extractMultipleText(CONFIG.traditional.actresses);
+            case '男优':
+                return extractMultipleText(CONFIG.traditional.actors);
+            case '类型':
+                return extractMultipleText(CONFIG.traditional.genres);
+            case '系列':
+                return extractText(CONFIG.traditional.series);
+            case '发行商':
+                return extractText(CONFIG.traditional.studio);
+            case '导演':
+                return extractText(CONFIG.traditional.director);
+            case '标签':
+                return extractMultipleText(CONFIG.traditional.tags);
+            case '发行日期':
+                return extractText(CONFIG.traditional.releaseDate);
+            default:
+                return null;
+        }
+    }
+
+    // 辅助函数：提取文本内容
+    function extractText(selector) {
+        try {
+            const elements = document.querySelectorAll(selector);
+            if (elements.length === 0) return '';
+
+            // 合并所有匹配元素的文本内容
+            return Array.from(elements)
+                .map(el => el.textContent.trim())
+                .filter(text => text)
+                .join(' | ');
+        } catch (e) {
+            console.error(`选择器错误: ${selector}`, e);
+            return '';
+        }
+    }
+
+    // 辅助函数：提取多个文本项（如女优列表）
+    function extractMultipleText(selector) {
+        try {
+            const elements = document.querySelectorAll(selector);
+            if (elements.length === 0) return [];
+
+            // 获取所有匹配元素的文本内容
+            return Array.from(elements)
+                .map(el => el.textContent.trim())
+                .filter(text => text && text.length > 0);
+        } catch (e) {
+            console.error(`选择器错误: ${selector}`, e);
+            return [];
+        }
+    }
+
+    // 辅助函数：提取视频海报URL（支持配置化属性读取）
     function extractVideoPosterUrl() {
         try {
-            const videoElements = document.querySelectorAll(CONFIG.traditional.videoPoster);
-            for (let video of videoElements) {
-                const dataPost = video.getAttribute('data-poster');
-                if (dataPost) {
-                    // 转换为绝对URL
-                    return new URL(dataPost, window.location).href;
+            const config = CONFIG.traditional.videoPoster;
+            
+            // 兼容旧的字符串配置格式
+            if (typeof config === 'string') {
+                // 使用现有的extractImages函数处理
+                const posterUrls = extractImages(config);
+                return posterUrls && posterUrls.length > 0 ? posterUrls[0] : null;
+            }
+            
+            // 新的配置对象格式
+            if (typeof config === 'object' && config.selector && config.attribute) {
+                const elements = document.querySelectorAll(config.selector);
+                
+                for (let element of elements) {
+                    const attrValue = element.getAttribute(config.attribute);
+                    if (attrValue) {
+                        // 转换为绝对URL
+                        try {
+                            return new URL(attrValue, window.location).href;
+                        } catch (e) {
+                            console.warn(`无效的URL格式: ${attrValue}`);
+                            return attrValue; // 返回原始值
+                        }
+                    }
                 }
             }
+            
             return null;
         } catch (e) {
             console.error('提取视频海报URL时出错:', e);
@@ -558,7 +679,7 @@
         }
     }
 
-    // 传统提取字段（保持原有功能）
+    // css提取字段（保持原有功能）
     function extractTraditionalFields() {
         extractedData = {
             发行日期: extractText(CONFIG.traditional.releaseDate),
@@ -582,60 +703,41 @@
         displayResults(extractedData);
     }
 
-    // 提取文本内容
-    function extractText(selector) {
-        try {
-            const elements = document.querySelectorAll(selector);
-            if (elements.length === 0) return '';
-
-            // 合并所有匹配元素的文本内容
-            return Array.from(elements)
-                .map(el => el.textContent.trim())
-                .filter(text => text)
-                .join(' | ');
-        } catch (e) {
-            console.error(`选择器错误: ${selector}`, e);
-            return '';
-        }
-    }
-
-    // 提取多个文本项（如女优列表）
-    function extractMultipleText(selector) {
-        try {
-            const elements = document.querySelectorAll(selector);
-            if (elements.length === 0) return [];
-
-            // 获取所有匹配元素的文本内容
-            return Array.from(elements)
-                .map(el => el.textContent.trim())
-                .filter(text => text && text.length > 0);
-        } catch (e) {
-            console.error(`选择器错误: ${selector}`, e);
-            return [];
-        }
-    }
-
-    // 提取图片链接
+    // 提取图片链接（增强版，支持多种属性）
     function extractImages(selector) {
         try {
             const elements = document.querySelectorAll(selector);
             return Array.from(elements)
                 .map(el => {
-                    // 尝试获取src属性
-                    let src = el.src || el.getAttribute('src');
-                    // 如果没有src，尝试data-src等懒加载属性
-                    if (!src) src = el.getAttribute('data-src') || el.getAttribute('data-original');
+                    // 按优先级尝试获取图片URL
+                    let src = el.src || 
+                             el.getAttribute('src') ||
+                             el.getAttribute('data-src') || 
+                             el.getAttribute('data-original') ||
+                             el.getAttribute('data-post') ||  // 视频海报常用
+                             el.getAttribute('data-lazy') ||   // 懒加载图片
+                             el.getAttribute('data-image') ||  // 自定义图片属性
+                             el.getAttribute('poster');        // 视频海报属性
+                    
                     return src;
                 })
-                .filter(src => src)
-                .map(src => new URL(src, window.location).href); // 转换为绝对路径
+                .filter(src => src)  // 过滤掉空值
+                .map(src => {
+                    // 转换为绝对URL
+                    try {
+                        return new URL(src, window.location).href;
+                    } catch (e) {
+                        console.warn('无效的URL格式:', src);
+                        return src; // 如果转换失败，返回原始值
+                    }
+                });
         } catch (e) {
             console.error(`图片选择器错误: ${selector}`, e);
             return [];
         }
     }
 
-    // 显示传统结果（恢复原来的显示格式）
+    // 显示css结果（恢复原来的显示格式）
     function displayResults(data) {
         const resultDiv = document.getElementById('extractionResults');
         if (!resultDiv) return;
@@ -649,7 +751,7 @@
 
         // 创建结果展示
         const resultTitle = document.createElement('h4');
-        resultTitle.textContent = '传统字段提取结果';
+        resultTitle.textContent = 'css字段提取结果';
         resultTitle.setAttribute('style', 'margin-top: 0; color: #333;');
         resultDiv.appendChild(resultTitle);
 

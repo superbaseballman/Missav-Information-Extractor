@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         成人影片信息提取器
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  专门用于提取成人影片网站的元数据信息，支持智能识别、面板隐藏显示和移动端适配
 // @author       superbaseballman
 // @match        https://missav.live/*
@@ -319,32 +319,71 @@
         }
     }
 
-    // 新增：智能提取函数（带css提取后备）
+    // 新增：智能提取函数（带 css 提取后备）
     function smartExtractFields() {
         try {
-            extractedData = {
-                timestamp: new Date().toISOString(),
-                原始URL: window.location.href,
-                extractionMethod: 'smart_with_fallback'
-            };
+            // 第一步：先展开"显示更多"内容
+            expandShowMoreContent();
+            
+            // 等待短暂延迟后执行提取
+            setTimeout(() => {
+                extractedData = {
+                    timestamp: new Date().toISOString(),
+                    原始URL: window.location.href,
+                    extractionMethod: 'smart_with_fallback'
+                };
 
-            // 第一步：执行智能提取
-            performSmartExtraction();
+                // 第二步：执行智能提取
+                performSmartExtraction();
 
-            // 第二步：检查缺失字段并使用css方法补充
-            fillMissingFieldsWithTraditional();
+                // 第三步：检查缺失字段并使用 css 方法补充
+                fillMissingFieldsWithTraditional();
 
-            // 第三步：特殊处理视频海报URL
-            const videoPosterUrl = extractVideoPosterUrl();
-            if (videoPosterUrl) {
-                extractedData['图片URL'] = videoPosterUrl;
-            }
+                // 第四步：特殊处理视频海报 URL
+                const videoPosterUrl = extractVideoPosterUrl();
+                if (videoPosterUrl) {
+                    extractedData['图片URL'] = videoPosterUrl;
+                }
 
-            displaySmartResults(extractedData);
+                displaySmartResults(extractedData);
+            }, 300); // 等待 300ms 让 DOM 更新
             
         } catch (e) {
             console.error('智能提取时出错:', e);
             alert('智能提取时出错，请检查控制台');
+        }
+    }
+
+    // 展开"显示更多"内容
+    function expandShowMoreContent() {
+        try {
+            // 查找所有包含"显示更多"文本的链接
+            const showMoreLinks = Array.from(document.querySelectorAll('a'))
+                .filter(link => link.textContent.trim() === '显示更多');
+            
+            if (showMoreLinks.length > 0) {
+                // 点击第一个匹配的链接
+                showMoreLinks[0].click();
+                console.log('已点击"显示更多"链接');
+                
+                // 如果是 Vue 应用，可能需要触发@click.prevent
+                // 尝试直接修改 v-show/v-if 绑定的数据
+                const vueApp = document.querySelector('[vue]') || document.body;
+                // 尝试查找并修改 showMore 状态（如果存在 Vue 实例）
+                if (window.__vue_app__) {
+                    try {
+                        const app = window.__vue_app__;
+                        // 这里可以尝试访问 Vue 实例的状态
+                        console.log('检测到 Vue 应用，尝试自动展开');
+                    } catch (e) {
+                        console.log('无法访问 Vue 实例状态');
+                    }
+                }
+            } else {
+                console.log('未找到"显示更多"链接');
+            }
+        } catch (e) {
+            console.error('展开"显示更多"内容时出错:', e);
         }
     }
 

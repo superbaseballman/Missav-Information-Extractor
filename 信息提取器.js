@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         成人影片信息提取器
 // @namespace    http://tampermonkey.net/
-// @version      1.9
+// @version      2.0
 // @description  专门用于提取成人影片网站的元数据信息，支持智能识别、面板隐藏显示和移动端适配
 // @author       superbaseballman
 // @match        https://missav.live/*
@@ -40,6 +40,7 @@
             code: '',
             title: 'h1',
             actresses: '',
+            description: 'div.mb-1.text-secondary.break-all.line-clamp-none', 
             actors: '',
             genres: '',
             series: '',
@@ -75,7 +76,7 @@
     const isTablet = /iPad|Android(?!.*Mobile)/i.test(navigator.userAgent);
 
     // 定义需要提取的核心字段
-    const CORE_FIELDS = ['番号', '标题', '女优', '类型', '发行商', '系列', '发行日期', '导演', '男优', '标签'];
+    const CORE_FIELDS = ['番号', '标题', '女优', '简介', '标签', '类型', '发行商', '系列', '发行日期', '导演', '男优'];
 
     // 创建控制面板
     function createControlPanel() {
@@ -421,6 +422,8 @@
                 return extractText(CONFIG.traditional.title);
             case '女优':
                 return extractMultipleText(CONFIG.traditional.actresses);
+            case '简介':
+                return extractText(CONFIG.traditional.description);
             case '男优':
                 return extractMultipleText(CONFIG.traditional.actors);
             case '类型':
@@ -662,6 +665,7 @@
             番号: extractText(CONFIG.traditional.code),
             标题: extractText(CONFIG.traditional.title),
             女优: extractMultipleText(CONFIG.traditional.actresses),
+            简介: extractText(CONFIG.traditional.description),
             男优: extractMultipleText(CONFIG.traditional.actors),
             类型: extractMultipleText(CONFIG.traditional.genres),
             系列: extractText(CONFIG.traditional.series),

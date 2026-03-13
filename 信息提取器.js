@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         成人影片信息提取器
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.3
 // @description  专门用于提取成人影片网站的元数据信息，支持智能识别、面板隐藏显示和移动端适配
 // @author       superbaseballman
 // @match        https://missav.live/*

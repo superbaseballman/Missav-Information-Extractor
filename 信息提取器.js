@@ -344,8 +344,26 @@
                 if (videoPosterUrl) {
                     extractedData['图片URL'] = videoPosterUrl;
                 }
+                // 第五步：提取页面中所有的 m3u8 链接（如果有）
+                let m3u8List = new Set();
 
-                displaySmartResults(extractedData);
+                // 仅扫描页面所有网络请求（最有效）
+                performance.getEntriesByType("resource").forEach(entry => {
+                    const url = entry.name;
+                    if (url && url.includes('.m3u8')) {
+                        m3u8List.add(url);
+                    }
+                });
+                
+                const list = Array.from(m3u8List);
+                if (list.length > 0) {
+                    console.log("✅ 抓取到 m3u8 地址：\n");
+                    list.forEach((url, i) => console.log(`${i + 1}. ${url}`));
+                    // 显示选择对话框让用户选择要使用的地址
+                    showM3u8SelectionDialog(list);
+                } else {
+                    console.log("❌ 未找到 m3u8 地址");
+                }
             }, 300); // 等待 300ms 让 DOM 更新
             
         } catch (e) {
@@ -755,8 +773,123 @@
             return [];
         }
     }
+    // 显示 m3u8 地址选择对话框
+    function showM3u8SelectionDialog(m3u8List) {
+        if (m3u8List.length === 0) return;
+        
+        // 创建模态对话框
+        const dialog = document.createElement('div');
+        dialog.setAttribute('style', `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        `);
+        
+        const dialogContent = document.createElement('div');
+        dialogContent.setAttribute('style', `
+            background-color: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        `);
+        
+        const title = document.createElement('h3');
+        title.textContent = `找到 ${m3u8List.length} 个 m3u8 地址`;
+        title.setAttribute('style', 'margin-top: 0; color: #4CAF50;');
+        dialogContent.appendChild(title);
+        
+        const description = document.createElement('p');
+        description.textContent = '请选择要使用的视频地址：';
+        description.setAttribute('style', 'color: #666; margin-bottom: 15px;');
+        dialogContent.appendChild(description);
+        
+        // 创建地址列表
+        const listContainer = document.createElement('div');
+        listContainer.setAttribute('style', 'max-height: 400px; overflow-y: auto; margin-bottom: 20px;');
+        
+        m3u8List.forEach((url, index) => {
+            const itemDiv = document.createElement('div');
+            itemDiv.setAttribute('style', `
+                padding: 12px;
+                margin-bottom: 10px;
+                border: 2px solid #ddd;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            `);
+            
+            itemDiv.addEventListener('mouseenter', function() {
+                this.style.borderColor = '#4CAF50';
+                this.style.backgroundColor = '#f1f8f4';
+            });
+            
+            itemDiv.addEventListener('mouseleave', function() {
+                this.style.borderColor = '#ddd';
+                this.style.backgroundColor = 'white';
+            });
+            
+            const numberSpan = document.createElement('span');
+            numberSpan.textContent = `${index + 1}. `;
+            numberSpan.setAttribute('style', 'font-weight: bold; color: #4CAF50; margin-right: 8px;');
+            
+            const urlSpan = document.createElement('span');
+            urlSpan.textContent = url;
+            urlSpan.setAttribute('style', 'word-break: break-all; font-size: 13px;');
+            
+            itemDiv.appendChild(numberSpan);
+            itemDiv.appendChild(urlSpan);
+            
+            // 点击选择并保存选中的地址
+            itemDiv.addEventListener('click', function() {
+                // 将选中的地址存入 extractedData
+                extractedData['视频地址'] = url;
+                
+                document.body.removeChild(dialog);
+                
+                // 刷新结果显示
+                displaySmartResults(extractedData);
 
-    // 显示css结果（恢复原来的显示格式）
+            });
+            
+            listContainer.appendChild(itemDiv);
+        });
+        
+        dialogContent.appendChild(listContainer);
+        
+        // 添加关闭按钮
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '取消';
+        closeButton.setAttribute('style', `
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 100%;
+        `);
+        closeButton.addEventListener('click', function() {
+            document.body.removeChild(dialog);
+        });
+        
+        dialogContent.appendChild(closeButton);
+        dialog.appendChild(dialogContent);
+        document.body.appendChild(dialog);
+    }
+
+    // 显示 css 结果（恢复原来的显示格式）
     function displayResults(data) {
         const resultDiv = document.getElementById('extractionResults');
         if (!resultDiv) return;

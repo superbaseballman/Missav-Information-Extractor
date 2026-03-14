@@ -882,6 +882,10 @@
         `);
         closeButton.addEventListener('click', function() {
             document.body.removeChild(dialog);
+
+            // 刷新结果显示
+            displaySmartResults(extractedData);
+
         });
         
         dialogContent.appendChild(closeButton);

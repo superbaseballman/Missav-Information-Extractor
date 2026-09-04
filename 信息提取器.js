@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         成人影片信息提取器
 // @namespace    http://tampermonkey.net/
-// @version      2.3
+// @version      2.5
 // @description  专门用于提取成人影片网站的元数据信息，支持智能识别、面板隐藏显示和移动端适配
 // @author       superbaseballman
 // @match        https://missav.live/*
@@ -125,24 +125,6 @@
         smartButtonDiv.appendChild(smartExtractBtn);
         smartButtonDiv.appendChild(traditionalExtractBtn);
 
-        // 按钮区域（导出和复制）
-        const buttonDiv = document.createElement('div');
-        buttonDiv.setAttribute('style', 'margin: 15px 0; display: flex; flex-wrap: wrap; gap: 8px;');
-
-        const exportBtn = document.createElement('button');
-        exportBtn.textContent = '导出JSON';
-        exportBtn.setAttribute('style', getButtonStyle('#FF9800'));
-        exportBtn.addEventListener('click', exportAsJson);
-
-        const copyBtn = document.createElement('button');
-        copyBtn.textContent = '复制结果';
-        copyBtn.setAttribute('style', getButtonStyle('#9C27B0'));
-        copyBtn.addEventListener('click', copyResults);
-
-        buttonDiv.appendChild(exportBtn);
-        buttonDiv.appendChild(copyBtn);
-
-
         // 结果显示区域
         const resultDiv = document.createElement('div');
         resultDiv.id = 'extractionResults';
@@ -151,7 +133,6 @@
         // 组装控制面板
         panel.appendChild(panelControls);
         panel.appendChild(smartButtonDiv);
-        panel.appendChild(buttonDiv);
         panel.appendChild(resultDiv);
 
         // 创建浮动显示按钮
@@ -363,6 +344,8 @@
                     showM3u8SelectionDialog(list);
                 } else {
                     console.log("❌ 未找到 m3u8 地址");
+                    // 无 m3u8 需要选择时，直接显示结果（内部会自动复制）
+                    displaySmartResults(extractedData);
                 }
             }, 300); // 等待 300ms 让 DOM 更新
             
@@ -655,6 +638,23 @@
         }
     }
 
+    // 辅助函数：为 图片URL 字段右侧追加"在新窗口打开"按钮
+    function appendOpenImageButton(fieldDiv, key, value) {
+        // 仅对 图片URL 字段追加按钮
+        if (key !== '图片URL') return;
+
+        const url = Array.isArray(value) ? (value[0] || '') : String(value || '');
+        if (!url.trim()) return;
+
+        const openBtn = document.createElement('a');
+        openBtn.textContent = '在新窗口打开';
+        openBtn.href = url.trim();
+        openBtn.target = '_blank';
+        openBtn.rel = 'noopener noreferrer';
+        openBtn.setAttribute('style', 'margin-left: 8px; background-color: #2196F3; color: white; padding: 2px 10px; border-radius: 4px; text-decoration: none; font-size: 12px; cursor: pointer; white-space: nowrap;');
+        fieldDiv.appendChild(openBtn);
+    }
+
     // 显示智能提取结果（恢复原来的显示格式）
     function displaySmartResults(data) {
         const resultDiv = document.getElementById('extractionResults');
@@ -698,6 +698,8 @@
             
             fieldDiv.appendChild(keySpan);
             fieldDiv.appendChild(valueSpan);
+            // 图片URL 字段右侧追加"在新窗口打开"按钮
+            appendOpenImageButton(fieldDiv, key, value);
             resultDiv.appendChild(fieldDiv);
         });
 
@@ -713,6 +715,9 @@
             statsDiv.innerHTML = `<strong>总计:</strong> 成功提取 ${fieldCount} 个字段`;
             resultDiv.appendChild(statsDiv);
         }
+
+        // 智能提取完成：自动将结果复制到剪贴板（无需再手动点击复制）
+        copyResults(true);
     }
 
     // css提取字段（保持原有功能）
@@ -856,7 +861,7 @@
                 extractedData['视频地址'] = url;
                 
                 document.body.removeChild(dialog);
-                
+
                 // 刷新结果显示
                 displaySmartResults(extractedData);
 
@@ -882,11 +887,11 @@
         `);
         closeButton.addEventListener('click', function() {
             document.body.removeChild(dialog);
-
+            
             // 刷新结果显示
             displaySmartResults(extractedData);
 
-        });
+        });      
         
         dialogContent.appendChild(closeButton);
         dialog.appendChild(dialogContent);
@@ -936,6 +941,8 @@
             
             fieldDiv.appendChild(keySpan);
             fieldDiv.appendChild(valueSpan);
+            // 图片URL 字段右侧追加"在新窗口打开"按钮
+            appendOpenImageButton(fieldDiv, key, value);
             resultDiv.appendChild(fieldDiv);
         });
 
@@ -981,10 +988,10 @@
         URL.revokeObjectURL(url);
     }
 
-    // 复制结果到剪贴板（过滤系统字段，但保留originalURL）
-    function copyResults() {
+    // 复制结果到剪贴板（过滤系统字段，但保留originalURL）；silent=true 时用于智能提取后自动静默复制
+    function copyResults(silent = false) {
         if (!extractedData || Object.keys(extractedData).length === 0) {
-            alert('请先提取字段');
+            if (!silent) alert('请先提取字段');
             return;
         }
 
@@ -996,20 +1003,30 @@
             }
         });
 
-        navigator.clipboard.writeText(JSON.stringify(cleanData, null, 2))
+        const jsonString = JSON.stringify(cleanData, null, 2);
+
+        navigator.clipboard.writeText(jsonString)
             .then(() => {
-                alert('结果已复制到剪贴板');
+                if (silent) {
+                    console.log('✅ 提取结果已自动复制到剪贴板');
+                } else {
+                    alert('结果已复制到剪贴板');
+                }
             })
             .catch(err => {
                 console.error('复制失败: ', err);
                 // 降级处理：使用旧方法复制
                 const textArea = document.createElement('textarea');
-                textArea.value = JSON.stringify(cleanData, null, 2);
+                textArea.value = jsonString;
                 document.body.appendChild(textArea);
                 textArea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textArea);
-                alert('结果已复制到剪贴板');
+                if (silent) {
+                    console.log('✅ 提取结果已自动复制到剪贴板（降级方式）');
+                } else {
+                    alert('结果已复制到剪贴板');
+                }
             });
     }
 

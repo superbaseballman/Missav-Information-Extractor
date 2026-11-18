@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         成人影片信息提取器
 // @namespace    http://tampermonkey.net/
-// @version      2.5
+// @version      2.6
 // @description  专门用于提取成人影片网站的元数据信息，支持智能识别、面板隐藏显示和移动端适配
 // @author       superbaseballman
 // @match        https://missav.live/*
@@ -655,6 +655,23 @@
         fieldDiv.appendChild(openBtn);
     }
 
+    function appendSupjavSearchLink(container, data) {
+        const rawCode = Array.isArray(data['番号']) ? data['番号'][0] : data['番号'];
+        if (rawCode == null) return;
+
+        const codeMatch = String(rawCode).match(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*-\d+/);
+        if (!codeMatch) return;
+        const code = codeMatch[0];
+
+        const searchLink = document.createElement('a');
+        searchLink.textContent = '在 Supjav 搜索此番号';
+        searchLink.href = `https://supjav.com/zh/?s=${encodeURIComponent(code)}`;
+        searchLink.target = '_blank';
+        searchLink.rel = 'noopener noreferrer';
+        searchLink.setAttribute('style', 'display: inline-block; margin-top: 10px; background-color: #2196F3; color: white; padding: 6px 10px; border-radius: 4px; text-decoration: none; font-size: 12px; cursor: pointer;');
+        container.appendChild(searchLink);
+    }
+
     // 显示智能提取结果（恢复原来的显示格式）
     function displaySmartResults(data) {
         const resultDiv = document.getElementById('extractionResults');
@@ -714,6 +731,7 @@
             statsDiv.setAttribute('style', 'margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;');
             statsDiv.innerHTML = `<strong>总计:</strong> 成功提取 ${fieldCount} 个字段`;
             resultDiv.appendChild(statsDiv);
+            appendSupjavSearchLink(resultDiv, data);
         }
 
         // 智能提取完成：自动将结果复制到剪贴板（无需再手动点击复制）
@@ -957,6 +975,7 @@
             statsDiv.setAttribute('style', 'margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;');
             statsDiv.innerHTML = `<strong>总计:</strong> 成功提取 ${fieldCount} 个字段`;
             resultDiv.appendChild(statsDiv);
+            appendSupjavSearchLink(resultDiv, data);
         }
     }
 
